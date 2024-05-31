@@ -1,0 +1,143 @@
+---
+title: "NLP_ pallettrader_survey_report"
+author: "sirius_ife"
+date: "2024-05-31"
+output: html_document
+---
+
+# Load packages
+```{r}
+#install.packages('tidyverse') #only install packages once
+library(tidyverse)
+#install.packages('tidytext') #only install packages once
+library(tidytext)
+#install.packages('SnowballC') #only install packages once
+library(SnowballC)
+#install.packages('wordcloud') #only install packages once
+library(wordcloud)
+#install.packages('Rcpp') #actually, this package may need to be updated
+library(Rcpp)
+```
+
+# Load one conference call as a text file
+```{r}
+save <- read_file(r"(pt.txt)")
+```
+
+# Look at text
+```{r}
+# explore
+summary(save)
+
+# view
+save %>% stringr::str_sub(1, 500)
+
+# Count characters
+save %>% stringr::str_count()
+```
+
+# Look for keywords
+```{r}
+# detect keywords
+save %>% stringr::str_detect(c('increased', 'optimistic', 'recovery', 'upward', 'opportunities', 'strengthen', 'abundance', 'stabilization'))
+
+# count the number of matches of a substring
+save %>% stringr::str_count('recovery')
+
+# Where is this keyword mentioned?
+save %>% stringr::str_locate_all('recovery')
+
+```
+
+# Tokenize the text
+```{r}
+# Change to a tibble (tidy dataframe)
+tokens <- tibble(save)
+
+# Tokenize
+tokens <- tokens %>% tidytext::unnest_tokens(output=word, input=save, token='words', to_lower=TRUE)
+
+# add order of the words
+tokens <- tokens %>% mutate(order = row_number())
+
+# Count tokens
+tokens %>% nrow()
+
+# First few words
+head(tokens)
+
+# count the number of matches of a substring
+tokens %>% dplyr::filter(word == str_sub('recovery')) %>% count()
+
+# Where is this keyword mentioned?
+tokens %>% dplyr::filter(word == str_sub('recovery'))
+```
+
+# Remove stop words
+```{r}
+# Load custom stopwords
+custom_stop_words <- read_csv(r"(stop_words_list.csv)", col_names = FALSE)
+
+# Remove stop words
+tokens <- tokens %>% 
+  anti_join(custom_stop_words, by = c('word'='X1'))
+
+tokens %>% nrow()
+```
+# Stemming and Lemmatizing
+```{r}
+# look at similar words
+head(arrange(tokens, word))
+
+#Stem the tokens
+stemmed <- tokens %>% mutate(stem = SnowballC::wordStem(word))
+
+# look at similar words now
+head(arrange(stemmed, word))
+
+
+stemmed %>% 
+  group_by(stem) %>% 
+  summarize(count = n()) %>%
+  arrange(desc(count)) %>% 
+  filter(count > 2) %>% 
+  mutate(token = reorder(stem, count)) %>% 
+  ggplot(aes(x=count, y=token)) +
+  geom_col()
+```
+
+# Key words
+```{r}
+set.seed(77)
+
+stemmed %>% 
+  group_by(word) %>% 
+  summarize(count = n()) %>% 
+  with(wordcloud(words=word, freq=count, min.freq=1, max.words=100, random.order=F, rot.per=0.30, colors=brewer.pal(8, "Dark2")))
+```
+
+# Sentiment total
+```{r}
+# load finance sentiment list and explore it
+lm_dict <- tidytext::get_sentiments('loughran')
+
+# view dictionary
+lm_dict %>% group_by(sentiment) %>% summarize(count = n())
+
+# Add sentiment
+sentimented <- stemmed %>% 
+  inner_join(lm_dict, by = 'word')
+
+# Explore totals
+sentimented %>% 
+  group_by(sentiment) %>% 
+  summarize(count = n(), percent = count/nrow(sentimented))
+
+sentimented %>% 
+  group_by(sentiment) %>% 
+  summarize(count = n(), percent = count/nrow(sentimented)) %>% 
+  ggplot(aes(x='', y=percent, fill=sentiment)) +
+  geom_bar(width=1, stat='identity')
+```
+
+
